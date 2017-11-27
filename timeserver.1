@@ -1,0 +1,142 @@
+.TH TIMESERVER 1 "Nov 26, 2017"
+.SH NAME
+timeserver, timeexec, timerun - a simulated time environment
+.
+.
+.
+.SH SYNOPSIS
+
+.PD 0
+.TP 11
+\fBtimeserver\fP [\fI-t (sec|"now")\fP] [\fI-i usec\fP] \
+[\fI-j sec\fP] [\fI-b prob\fP] [\fI-f\fP]
+.TP
+\fBtimeexec\fI program args...\fP
+.TP
+\fBtimerun\fP [\fIsec\fP|\fI"sleep"\fP|\fI"wake"\fP]
+.PD
+.
+.
+.
+.SH DESCRIPTION
+
+The three programs \fPtimeserver\fP, \fBtimeexec\fP and \fBtimerun\fP implement
+a simulated time environment for programs that use time via
+\fBtime\fP(\fI2\fP), \fBgettimeofday\fP(\fI2\fP), \fBsleep\fP(\fI3\fP) and
+\fBnanosleep\fP(\fI2\fP). Such programs are run via \fBtimeexec\fP to work in
+the simulated time; \fBtimerun\fP runs the simulation for a number of seconds;
+\fBtimeserver\fP manages the simulated time, and is therefore to be started
+before the others.
+
+.TP
+.B
+timeexec
+executes a program with the functions about time redirected to the timeserver
+
+.TP
+.B
+timerun
+run the simulation of time for a given number of seconds
+
+.TP
+.B
+timeserver
+maintain the simulated time: receive the requests from the programs run via
+timeexec and the command for running the simulation from timerun
+.
+.
+.
+.SH EXAMPLES
+
+Start \fBsleep\fP(\fI1\fP) three times in the simulation, then run the
+simulation for 8 seconds, then 12, then 10.
+
+.nf
+timeserver > log &
+timeexec sleep 20 &
+timeexec sleep 12 &
+timeexec sleep 18 &
+timerun 8
+timerun 12
+timerun 10
+killall timeserver
+.fi
+
+Run \fBcron\fP(\fI1\fP) in a simulated interval between 16:51 and 16:56 (five
+minutes):
+
+.nf
+timeserver -t $(date --date 16:51 +%s) > log &
+timeexec cron -f &
+timerun $((5 * 60))
+killall timeserver
+.fi
+
+.
+.
+.
+.SH USAGE
+
+A simulation starts by launching \fBtimeexec\fP, which maintains the current
+time and the wakeup time of programs that are sleeping, and wakes these up at
+the appropriate time. The starting time can be specified, as well as the
+behavior when programs do not call time-related functions for a certain time.
+
+Programs can be added to the simulation by launching them via \fBtimeexec\fP.
+Such a program run unimpeded until it calls a time function, at which point it
+freezes. This way, other programs can be added to the simulation before the
+simulated time starts.
+
+The simulated time is started by \fBtimerun\fP. The programs are unblocked and
+run for the given duration of the simulated time, then they block again when
+they call a time function. Launching \fBtimerun\fP again runs the simulation
+some more.
+
+See README for internals.
+
+.
+.
+.
+.SH OPTIONS
+
+The only option to \fBtimerun\fP is the number of seconds to run the
+simulation. If no argument is passed, or the string \fI"sleep"\fP, the
+simulation runs until any of the programs sleeps or unregister. If the argument
+is the string \fI"wake"\fP, the simulation ends when any of the programs wakes.
+
+The program to run is passed to \fBtimerun\fP with its arguments.
+
+The options to \fBtimeserver\fP are:
+
+.TP
+.BI -t " sec
+start time of the simulation in number of seconds since the epoch; other
+representations of time can be converted to this by \fBdate\fP(\fI1\fP), for
+example: \fIdate --date "Oct 21, 2017 12:43" +%s\fP; in place of this number,
+the string \fI"now"\fP means the current time
+.TP
+.BI -i " usec
+after this number of microseconds of inactivity from the programs, the 
+simulated time is advanced according to the -j option; the default is 50000
+.TP
+.BI -j " sec
+the number of seconds to advance the simulation for when no client is inactive
+for the time specified by -i; the default is to advance to the next wakeup from
+sleep of some client
+.TP
+.BI -b " prob
+allow busywaiting by increasing the simulated time each time any of the program
+inquiries the current time; in particular, advance by one second with
+probability \fI1/prob\fP
+.TP
+.B -f
+assume that the programs in the simulation do not fork and do not execute other
+programs; this allows for a faster simulation, but it may be incorrect if the
+assumption is not valid
+
+.
+.
+.
+.SH SEE ALSO
+timeskew (https://github.com/vi/timeskew)
+

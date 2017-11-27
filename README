@@ -1,0 +1,211 @@
+run programs on a simulated time
+
+examples
+--------
+
+start three programs, advance their time by 24 seconds, then 321, etc:
+
+timeserver			# server
+timeexec program1 args		# start first program
+timeexec program2 args		# start second program
+timeexec program3 args		# start third program
+timerun 24			# advance time for 24 seconds
+timerun 321			# other 321 seconds
+timerun				# advance time up the next wakeup time
+timerun 10			# other 10 seconds
+
+run cron under simulated time:
+
+timeserver -t now
+timeexec crond
+timerun ...
+
+programs
+--------
+
+timeserver
+	centralized handling of time; receive all requests to sleep(),
+	nanosleep(), time() and gettimeofday() from the clients; reply to them
+	according to the simulated time
+
+	arguments: see man page
+
+timexec + timeclient.so
+	run a program in the simulated time; intercept the calls to sleep()
+	nanosleep(), time() and gettimeofday() and redirect them to the
+	timeserver
+
+timerun
+	run the simulated time for the given number of seconds; default is the
+	time left to the next wakeup of a program
+
+implementation
+--------------
+
+timeexec runs the program under the timeclient.so preload library; this library
+intercepts all calls to sleep(), nanosleep(), time() and gettimeofday() and
+make them send ipc messages to the server
+
+in particular, time() and gettimeofday() send messages asking the server for
+the current time, which the server answer immediately; the time is randomly
+increased by a second at each query to allow busywaiting; sleep() and
+nanosleep() send a similar message to the server, which however replies only
+when the wakeup time is reached; this way, the client is blocked until then
+
+since the server wakes sleeping clients at different times, each client needs a
+unique identifier; clients register with the server to receive that unique
+identifier; this is also the case for their chidren, which still have the
+system calls redirected to the timeserver; this is why libclient.so also
+intercepts fork(), execve() and execle(); it also intercepts _exit() and
+exit_group() to deregister clients; however, termination by signals is not done
+by calling _exit; clients terminated this way do not unregister; the timeserver
+checks for their termination by their pid from time to time
+
+messages
+--------
+
+since the server listens to messages of different types at the same time, and
+msgrcv() only allow that by specifying a maximal message type, the messages
+directed to the server need to be of type under a certain bound TOSERVER
+
+controller->server
+
+	RUN
+		the timeserver is instructed to run the simulation for a given
+		number of seconds; if this number is zero, run until any of the
+		clients wakes up from sleep
+
+client->server
+
+	REGISTER
+		the client register with the timeserver;
+		reply is a message of type CLIENTID containing the client id
+
+	PID
+		the client tells the server its pid; this information could not
+		be included in the REGISTER message (see the discussion on the
+		CLIENTID message); no reply is sent
+
+	UNREGISTER
+		the client unregister with the timeserver; no reply sent
+
+	SLEEP
+		a client called sleep() or nanosleep(); the server replies with
+		a message of type WAKE+client_id when the wakeup time is
+		reached; the client is blocked waiting for this message until
+		then
+
+	CANCEL
+		while a client was waiting for the wakeup message, an interrupt
+		arrived; in this condition, the call to sleep() or nanosleep()
+		must terminate immediately; however, the server still has a
+		wakeup message programmed to be sent; the CANCEL message tells
+		it to send that wakeup event immediately, if not already
+
+	QUERY
+		the client called time() or gettimeofday(); the server
+		immediately replies with the current time in the simulation in
+		a message of type TIME; the time is increased by one (with a
+		certain probability) at each query to allow for busywaiting
+
+server->client
+
+	CLIENTID
+		in response to a REGISTER message, the server sends the
+		client_id in this message; if two clients do this at about the
+		same time, they may receive each the CLIENTID message of the
+		other; this is irrelevant, all that matters is that each
+		client receives a unique id
+
+	TIME
+		the server sends this type of messages in response to a QUERY
+		message; it contains the current simulated time; again, which
+		client receives which message is irrelevant
+
+	WAKE+client_id
+		message sent by the server at the appropriate time to wake a
+		client that sent a SLEEP message; this is the only message
+		that really needs to be delivered to a specific client
+
+timeout
+-------
+
+ideally, the timeserver could wait until all clients are sleeping, and then
+jump to the first wakeup time; in practice, this is not possible for two
+reasons:
+
+a. even if all registered clients are sleeping, jumping may be incorrect
+
+   this happens when the last non-sleeping client forks and then sleeps before
+   the child registers; in this case, the timeserver does not realize that
+   there is a new client and jumps to first wakeup time before serving the
+   requests from the new client
+
+   this also happens if the last non-sleeping client executes another program:
+   it unregisters before execve() and registers again afterwards; after the
+   deregistration, the timeserver believes that no clients are running
+
+b. even if some clients are running, jumping may be necessary
+
+   the non-sleeping clients may run a long time without sending requests to the
+   timeserver; if the timeserver just waits for messages, it does not get any,
+   so the sleeping clients are not waken
+
+for these reason, the timeserver reads messages with a timeout; the timeout
+allows clients to run some time before making requests to the timeserver, and
+to finish a fork or execve; only if no message is read within the given time,
+the timeserver jumps to the next wakeup time
+
+with option -j, instead of the next wakeup time the timeserver increases time
+by the given number of seconds
+
+signals
+-------
+
+programs run with the timeclient.so preload library register with the
+timeserver when they start and deregister when they end; this is done by
+rerouting the fork(), exec(), _exit() and exit_group() system calls
+
+unfortunately, processes killed by signals execute neither _exit() nor
+exit_group(); for this reason, at the appropriate time the timeserver checks
+whether all clients are still alive; this is why clients send their pid
+
+todo
+----
+
+1. include nanoseconds in the time; make nanosleep() the main function and
+sleep() call it; the same for gettimeofday() and time()
+
+2. use some other file instead of /dev/null, so that more instances of
+timeserver can be run at the same time
+
+3. while the timeout for long-running clients is necessary (albeit arbitrary in
+length), keeping track of the non-sleeping clients exactly is possible
+
+have messages to temporarily increase/decrease the number of registered
+(non-sleeping) clients; before forking, the client sends an INCREASE message;
+the DECREASE is sent by it if the fork fails, otherwise is sent by the child
+after registering
+
+the same is done across an execve; this requires an enviroment variable to be
+passed to execve so that the constructor the known whether it has been called
+by the execve() of timeclient.c (and then it has to decrease after
+registering) or by timeexec.c (do not decrease); otherwise: timeexec.c sends
+the increase before execve
+
+what complicates the mechanism is that processes may be interrupted by a signal
+after the increase but before the decrease; this would require the pid to be be
+stored in the server; since a client may fork multiple times in a row before
+the children can decrease, for each client the number of increases has to be
+stored
+
+maybe: the increase/decrease messages affect a different counter than the
+number of clients
+
+see also
+--------
+
+the mechanism of intercepting the time function calls with a preload library is
+based on that used by timeskew (https://github.com/vi/timeskew), which allows
+running a program on accelerated simulated time
+
