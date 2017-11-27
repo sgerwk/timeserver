@@ -9,8 +9,9 @@
  * timeexec program3 args
  * timerun 20			# run 20 seconds of simulation
  * timerun 30			# other 30
- * timerun			# run until next wakeup
+ * timerun			# run until next sleep or unregister
  * timerun 100			# other 100 seconds of simulation
+ * timerun wake			# run until next wakeup
  */
 
 #include <stdlib.h>
