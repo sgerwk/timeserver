@@ -382,8 +382,9 @@ int execle(const char *path, const char *arg, ...) {
 	va_list ap;
 	char *s;
 	char **envp;
-	char **argv;
+	char **res, **argv;
 	int argn;
+	int err;
 
 	logprintf("%d: execle(%s,...)\n", getpid(), path);
 
@@ -392,14 +393,25 @@ int execle(const char *path, const char *arg, ...) {
 	argv[argn - 1] = (char *) arg;
 	va_start(ap, arg);
 	for (argn++; NULL != (s = va_arg(ap, char *)); argn++) {
-		argv = realloc(argv, (argn + 1) * sizeof(char *));
+		res = realloc(argv, (argn + 1) * sizeof(char *));
+		if (res == NULL) {
+			va_end(ap);
+			free(argv);
+			errno = ENOMEM;
+			return -1;
+		}
+		argv = res;
 		argv[argn - 1] = s;
 	}
 	argv[argn - 1] = NULL;
 	envp = va_arg(ap, char **);
 	va_end(ap);
 
-	return execve(path, argv, envp);
+	execve(path, argv, envp);
+	err = errno;
+	free(argv);
+	errno = err;
+	return -1;
 }
 
 /*
