@@ -331,7 +331,7 @@ int execve(const char *filename, char *const argv[],
                   char *const envp[]) {
 	int i;
 	char **newenvp;
-	char ldpreload[400], logfilename[400];
+	char ldpreload[1020], logfilename[1020];
 	int oldld, oldlog;
 	int res;
 
@@ -356,8 +356,8 @@ int execve(const char *filename, char *const argv[],
 
 	newenvp = malloc((i + 2) * sizeof(char *));
 	memcpy (newenvp, envp, i * sizeof(char *));
-	snprintf(ldpreload, 400, "LD_PRELOAD=%s", timeclient);
-	snprintf(logfilename, 400, "TIMECLIENTLOGFILE=%s", logfile);
+	snprintf(ldpreload, 1020, "LD_PRELOAD=%s", timeclient);
+	snprintf(logfilename, 1020, "TIMECLIENTLOGFILE=%s", logfile);
 	i--;
 	if (! oldld)
 		newenvp[i++] = ldpreload;
