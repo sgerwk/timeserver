@@ -25,15 +25,15 @@ programs
 
 timeserver
 	centralized handling of time; receive all requests to sleep(),
-	nanosleep(), time() and gettimeofday() from the clients; reply to them
-	according to the simulated time
+	nanosleep(), time(), gettimeofday() and clock_gettime() from the
+	clients; reply to them according to the simulated time
 
 	arguments: see man page
 
 timexec + timeclient.so
 	run a program in the simulated time; intercept the calls to sleep()
-	nanosleep(), time() and gettimeofday() and redirect them to the
-	timeserver
+	nanosleep(), time(), gettimeofday() and clock_gettime() nd redirect
+	them to the timeserver
 
 timerun
 	run the simulated time for the given number of seconds; default is the
@@ -43,14 +43,15 @@ implementation
 --------------
 
 timeexec runs the program under the timeclient.so preload library; this library
-intercepts all calls to sleep(), nanosleep(), time() and gettimeofday() and
-make them send ipc messages to the server
+intercepts all calls to sleep(), nanosleep(), time(), gettimeofday() and
+clock_gettime() and make them send ipc messages to the server
 
-in particular, time() and gettimeofday() send messages asking the server for
-the current time, which the server answer immediately; the time is randomly
-increased by a second at each query to allow busywaiting; sleep() and
-nanosleep() send a similar message to the server, which however replies only
-when the wakeup time is reached; this way, the client is blocked until then
+in particular, time(), gettimeofday() and clock_gettime() send messages asking
+the server for the current time, which the server answer immediately; the time
+is randomly increased by a second at each query to allow busywaiting; sleep()
+and nanosleep() send a similar message to the server, which however replies
+only when the wakeup time is reached; this way, the client is blocked until
+then
 
 since the server wakes sleeping clients at different times, each client needs a
 unique identifier; clients register with the server to receive that unique
@@ -103,10 +104,11 @@ client->server
 		it to send that wakeup event immediately, if not already
 
 	QUERY
-		the client called time() or gettimeofday(); the server
-		immediately replies with the current time in the simulation in
-		a message of type TIME; the time is increased by one (with a
-		certain probability) at each query to allow for busywaiting
+		the client called time(), gettimeofday() or clock_gettime();
+		the server immediately replies with the current time in the
+		simulation in a message of type TIME; the time is increased by
+		one (with a certain probability) at each query to allow for
+		busywaiting
 
 server->client
 
@@ -174,7 +176,7 @@ todo
 ----
 
 1. include nanoseconds in the time; make nanosleep() the main function and
-sleep() call it; the same for gettimeofday() and time()
+sleep() call it; the same for time(), gettimeofday(), and clock_gettime()
 
 2. use some other file instead of /dev/null, so that more instances of
 timeserver can be run at the same time

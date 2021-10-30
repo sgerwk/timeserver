@@ -82,6 +82,7 @@ unsigned int (* sleep_orig)(unsigned int seconds);
 int (* nanosleep_orig)(const struct timespec *req, struct timespec *rem);
 time_t (*time_orig)(time_t *tloc);
 int (* gettimeofday_orig)(struct timeval *restrict tp, void *restrict tzp);
+int (* clock_gettime_orig)(clockid_t clock_id, struct timespec *tp);
 
 pid_t (* fork_orig)(void);
 void (* _exit_orig)(int status);
@@ -209,6 +210,18 @@ int gettimeofday(struct timeval *restrict tp, void *restrict tzp) {
 		/* unspecified behavior, this is */
 		(void) tzp;
 	}
+
+	return 0;
+}
+
+int clock_gettime(clockid_t clock_id, struct timespec *tp) {
+	time_t t;
+
+	(void) clock_id;
+
+	t = time(NULL);
+	tp->tv_sec = t;
+	tp->tv_nsec = 1234;
 
 	return 0;
 }
@@ -440,6 +453,7 @@ static void __attribute__((constructor)) init() {
 	nanosleep_orig = dlsym(RTLD_NEXT, "nanosleep");
 	time_orig = dlsym(RTLD_NEXT, "time");
 	gettimeofday_orig = dlsym(RTLD_NEXT, "gettimeofday");
+	clock_gettime_orig = dlsym(RTLD_NEXT, "clock_gettime_orig");
 
 	fork_orig = dlsym(RTLD_NEXT, "fork");
 	_exit_orig = dlsym(RTLD_NEXT, "_exit");
